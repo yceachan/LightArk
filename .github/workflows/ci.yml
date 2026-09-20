@@ -1,0 +1,37 @@
+name: validate
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --manifest-path backend/Cargo.toml --check
+      - run: cargo test --manifest-path backend/Cargo.toml --locked
+      - run: cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend run build
+      - run: cd frontend && npx playwright install --with-deps chromium
+      - run: cargo build --manifest-path backend/Cargo.toml --locked
+      - name: Browser tests against production server
+        env:
+          FOLIO_PASSWORD: folio-local-dev
+          FOLIO_DATA: /tmp/folio-test-data
+          FOLIO_WEB: frontend/dist
+        run: |
+          backend/target/debug/folio-kb > /tmp/folio.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8787/healthz && break || sleep 1; done
+          npm --prefix frontend test
+      - run: docker build -t folio-kb:ci .
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-report
+          path: frontend/test-results/

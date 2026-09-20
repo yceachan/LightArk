@@ -1,0 +1,39 @@
+services:
+  folio:
+    build: .
+    restart: unless-stopped
+    environment:
+      FOLIO_PASSWORD: ${FOLIO_PASSWORD:?Set FOLIO_PASSWORD in .env}
+      FOLIO_SECURE_COOKIE: ${FOLIO_SECURE_COOKIE:-false}
+    ports:
+      - "127.0.0.1:${FOLIO_PORT:-8787}:8787"
+    volumes:
+      - folio-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: [https]
+    restart: unless-stopped
+    depends_on:
+      folio:
+        condition: service_healthy
+    environment:
+      FOLIO_DOMAIN: ${FOLIO_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  folio-data:
+  caddy-data:
+  caddy-config:
